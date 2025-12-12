@@ -1,18 +1,34 @@
-# tushare
+# ===========================
+# Sensitive configs (TuShare, API keys)
+# ===========================
 config_tushare.py
+*.token
+*.key
 
-# Python venv
+# ===========================
+# Python virtual environments
+# ===========================
 quant-env/
 venv/
 .env/
-*.pyc
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
 
-# 数据文件
+# ===========================
+# Data files (raw data should not enter Git)
+# ===========================
 data/raw/
-*.csv
-*.parquet
+data/**/*.csv
+data/**/*.parquet
 
-# VSCode
+# ===========================
+# Jupyter Notebook checkpoints
+# ===========================
+.ipynb_checkpoints/
+
+# ===========================
+# VSCode settings
+# ===========================
 .vscode/
-
