@@ -1,0 +1,18 @@
+# tushare
+config_tushare.py
+
+# Python venv
+quant-env/
+venv/
+.env/
+*.pyc
+__pycache__/
+
+# 数据文件
+data/raw/
+*.csv
+*.parquet
+
+# VSCode
+.vscode/
+
