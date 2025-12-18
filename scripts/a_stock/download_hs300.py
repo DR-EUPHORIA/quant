@@ -1,3 +1,10 @@
+import sys
+from pathlib import Path
+
+# 将项目根目录加入 Python 路径
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.append(str(ROOT))
+
 # scripts/download_hs300.py
 import os
 from pathlib import Path
@@ -8,13 +15,13 @@ import tushare as ts
 
 # 从本地配置导入 token
 try:
-    from config_tushare import TUSHARE_TOKEN
+    from config.config_tushare import TUSHARE_TOKEN
 except ImportError:
     raise RuntimeError("请先在项目根目录下创建 config_tushare.py，并定义 TUSHARE_TOKEN")
 
 
 # === 基本参数 ===
-DATA_ROOT = Path(__file__).resolve().parent.parent / "data" / "tushare"
+DATA_ROOT = ROOT / "data" / "tushare"
 RAW_DIR = DATA_ROOT / "raw"
 PROCESSED_DIR = DATA_ROOT / "processed"
 
@@ -34,7 +41,7 @@ def init_tushare():
     return pro
 
 
-def get_hs300_universe(pro: ts.pro_api, end_date: str) -> pd.DataFrame:
+def get_hs300_universe(pro, end_date: str) -> pd.DataFrame:
     """
     获取沪深300成分股列表（按某个截止日期，例如最新成分）。
     入门阶段，先用“固定成分”做股票池即可。
@@ -48,7 +55,7 @@ def get_hs300_universe(pro: ts.pro_api, end_date: str) -> pd.DataFrame:
     return w
 
 
-def get_daily_all(pro: ts.pro_api) -> pd.DataFrame:
+def get_daily_all(pro) -> pd.DataFrame:
     """
     从 TuShare 拉全市场日线行情，再按沪深300股票池筛选。
     这样调用次数少，逻辑简单。
@@ -65,7 +72,7 @@ def get_daily_all(pro: ts.pro_api) -> pd.DataFrame:
     return df
 
 
-def get_daily_basic_all(pro: ts.pro_api) -> pd.DataFrame:
+def get_daily_basic_all(pro) -> pd.DataFrame:
     """
     拉全市场 daily_basic（市值、换手率、PE、PB 等）。
     TuShare 限制较松，一般一次可拉全区间。

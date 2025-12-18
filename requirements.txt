@@ -1,0 +1,31 @@
+# === Core scientific computing ===
+numpy>=1.26.0
+pandas>=2.1.0
+pyarrow>=14.0.0
+
+# === Visualization ===
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# === Data sources ===
+tushare>=1.4.0
+akshare>=1.12.0
+requests>=2.31.0
+
+# === Backtesting helpers ===
+scipy>=1.11.0
+statsmodels>=0.14.0
+
+# === Jupyter (optional but recommended) ===
+jupyterlab>=4.0.0
+ipykernel>=6.25.0
+
+# === For progress bars in scripts ===
+tqdm>=4.66.0
+
+# === Timezone and date handling ===
+python-dateutil>=2.8.2
+pytz>=2023.3
+
+# === Optional: machine learning / advanced factors ===
+scikit-learn>=1.3.0

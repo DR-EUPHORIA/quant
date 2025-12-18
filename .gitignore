@@ -19,10 +19,10 @@ __pycache__/
 # ===========================
 # Data files (raw data should not enter Git)
 # ===========================
-data/raw/
-data/**/*.csv
-data/**/*.parquet
-
+data/
+*.csv
+*.parquet
+*.xlsx
 # ===========================
 # Jupyter Notebook checkpoints
 # ===========================
