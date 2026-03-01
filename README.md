@@ -230,4 +230,3 @@ pip install -r requirements.txt
 * Email: [duanrui553@gmail.com](mailto:duanrui553@gmail.com)
 * GitHub: [https://github.com/DR-EUPHORIA](https://github.com/DR-EUPHORIA)
 
-
