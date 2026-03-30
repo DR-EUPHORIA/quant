@@ -2,8 +2,10 @@
 # Sensitive configs (TuShare, API keys)
 # ===========================
 config_tushare.py
+config/config_tushare.py
 *.token
 *.key
+.env
 
 # ===========================
 # Python virtual environments
@@ -20,6 +22,7 @@ __pycache__/
 # Data files (raw data should not enter Git)
 # ===========================
 data/
+results/
 *.csv
 *.parquet
 *.xlsx

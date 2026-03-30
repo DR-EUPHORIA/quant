@@ -1,4 +1,4 @@
-
+﻿
 # quant
 
 > A-share quantitative research pipeline: data ingestion → panel construction → backtesting (MVP)
@@ -30,10 +30,9 @@
 
 ```text
 quant/
-├── config/                 # 本地配置（token 等，不入 Git）
+├── config/                 # 本地配置与路径定义
 │   ├── __init__.py
-│   ├── config_tushare.py   # TuShare Token（通过环境变量注入）
-│   └── paths.py            # 项目统一路径定义
+│   └── paths.py
 │
 ├── scripts/
 │   └── a_stock/
@@ -42,6 +41,9 @@ quant/
 │       ├── backtest_ma.py        # 示例：MA 策略回测（MVP）
 │       ├── factor_test.py        # 因子分组回测
 │       └── inspect_parquet.py    # parquet schema 检查工具
+│
+├── src/
+│   └── quantbt/            # 回测核心库（engine / metrics / cost / io）
 │
 ├── data/                   # 本地数据（全部 ignore）
 │   └── tushare/
@@ -79,6 +81,15 @@ quant/
   * 缺失值与数据规模统计
 
 > 数据以 **研究面板（long format）** 形式组织，便于后续因子与回测模块复用。
+>
+> 当前脚本约定的默认文件为：
+> - 原始行情：`data/tushare/raw/daily_20150101_20241231.parquet`
+> - 原始基本面：`data/tushare/raw/daily_basic_20150101_20241231.parquet`
+> - 成分股：`data/tushare/raw/hs300_constituents_latest.parquet`
+> - 面板输出：`data/tushare/processed/hs300_panel_20150101_20241231.parquet`
+>
+> 若运行环境中 `data/tushare/processed/` 不可写，`build_panel.py` 会自动回退到
+> `results/a_stock/panels/hs300_panel_20150101_20241231.parquet`。
 
 ---
 
@@ -104,8 +115,8 @@ quant/
     * 最大回撤
     * Sharpe Ratio
   * 净值曲线可视化（matplotlib）
+  * 结果导出（`csv` / `xlsx` / 图片）
 
-> 该设计更接近私募内部 **研究平台 / 因子验证工具** 的最小实现，而非回测玩具。
 
 ---
 
@@ -116,12 +127,13 @@ quant/
   * MA5 / MA20 均线交叉（示例，用于验证回测闭环）
 * **横截面研究**
 
-  * 基础因子分组回测（开发中）
-  * 计划支持：
+  * 基础因子分组回测（已提供最小版本）
+  * 当前已支持：
 
-    * 月度调仓
+    * 日 / 周 / 月调仓
     * 分组净值
-    * IC / RankIC
+    * 多空组合净值
+    * IC（Spearman）
 
 ---
 
@@ -160,7 +172,16 @@ docker run -it --rm \
 TUSHARE_TOKEN=YOUR_TUSHARE_TOKEN
 ```
 
-`config/config_tushare.py` 将通过环境变量读取 token。
+如果你使用 `download_hs300.py` 拉取 TuShare 数据，需要在本地提供
+`config/config_tushare.py`，例如：
+
+```python
+import os
+
+TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "")
+```
+
+脚本会从这个模块中读取 `TUSHARE_TOKEN`。
 
 ---
 
@@ -179,6 +200,7 @@ docker run -it --rm --env-file .env -v $(pwd):/workspace -w /workspace quant-dev
 python scripts/a_stock/download_hs300.py
 python scripts/a_stock/build_panel.py
 python scripts/a_stock/backtest_ma.py
+python scripts/a_stock/factor_test.py --factor pe_ttm
 ```
 
 ---
@@ -191,6 +213,126 @@ source quant-env/bin/activate  # Windows: quant-env\Scripts\activate
 pip install -r requirements.txt
 ```
 
+安装后可先做一次依赖检查：
+
+```bash
+python scripts/env_check.py
+```
+
+然后运行最小自动验证：
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+---
+
+## ▶️ 脚本说明
+
+### 1. 下载原始数据
+
+```bash
+python scripts/a_stock/download_hs300.py
+```
+
+输出：
+
+* `data/tushare/raw/daily_20150101_20241231.parquet`
+* `data/tushare/raw/daily_basic_20150101_20241231.parquet`
+* `data/tushare/raw/hs300_constituents_latest.parquet`
+
+### 2. 构建研究面板
+
+```bash
+python scripts/a_stock/build_panel.py
+```
+
+常用参数：
+
+```bash
+python scripts/a_stock/build_panel.py \
+  --daily-path data/tushare/raw/daily_20150101_20241231.parquet \
+  --basic-path data/tushare/raw/daily_basic_20150101_20241231.parquet \
+  --universe-path data/tushare/raw/hs300_constituents_latest.parquet \
+  --output-path data/tushare/processed/hs300_panel_20150101_20241231.parquet
+```
+
+### 3. 运行均线策略回测
+
+```bash
+python scripts/a_stock/backtest_ma.py
+```
+
+常用参数：
+
+```bash
+python scripts/a_stock/backtest_ma.py \
+  --start-date 2020-01-01 \
+  --end-date 2024-12-31 \
+  --fast 5 \
+  --slow 20 \
+  --cost-bps 20
+```
+
+输出目录默认在 `results/a_stock/ma/`，包括：
+
+* 净值、收益、持仓 `csv`
+* 绩效指标 `csv`
+* 净值 / 回撤 / 收益分布 / 滚动夏普图
+* Excel 汇总结果
+
+### 4. 运行因子分组回测
+
+```bash
+python scripts/a_stock/factor_test.py --factor pe_ttm
+```
+
+常用参数：
+
+```bash
+python scripts/a_stock/factor_test.py \
+  --factor pe_ttm \
+  --groups 5 \
+  --rebalance monthly \
+  --start-date 2020-01-01 \
+  --end-date 2024-12-31
+```
+
+如果因子值越大越好，可以加：
+
+```bash
+python scripts/a_stock/factor_test.py --factor total_mv --higher-is-better
+```
+
+输出目录默认在 `results/a_stock/factor/`，包括：
+
+* 分组收益与分组净值
+* 分组成员矩阵
+* Long-short 指标表
+* IC 序列与 IC 汇总
+* 分组净值图与 IC 图
+
+---
+
+### 5. 运行数据质量检查
+
+`ash
+python scripts/a_stock/data_quality_check.py
+`
+
+如果要把检查结果保存成 CSV：
+
+`ash
+python scripts/a_stock/data_quality_check.py --save-csv
+`
+
+输出目录默认在 esults/a_stock/data_quality/，包括：
+
+* 最新交易日成分股缺口
+* 每日样本覆盖度
+* 每只股票历史长度
+* 每只股票的字段缺失率
+
 ---
 
 ## 📊 数据说明
@@ -199,6 +341,9 @@ pip install -r requirements.txt
 * 时间区间：2015–2024（日频）
 * 面板主键：`(ts_code, trade_date)`
 * 数据存储格式：`parquet`
+
+> 注意：如果原始数据实际只覆盖少量日期，回测脚本仍然可以运行，
+> 但绩效指标会退化为 `0` 或 `NaN`。脚本会在运行时打印样本区间和交易日数。
 
 > 当前版本用于 **研究与工程验证**，存在成分股幸存者偏差，
 > 后续将升级为 **动态指数成分处理**。
