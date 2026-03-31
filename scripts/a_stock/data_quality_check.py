@@ -137,6 +137,81 @@ def history_by_code(panel: pd.DataFrame) -> pd.DataFrame:
     return history.reset_index().sort_values(["rows", "ts_code"])
 
 
+def bool_coverage_summary(panel: pd.DataFrame) -> pd.DataFrame:
+    fields = [
+        "is_suspended",
+        "is_st",
+        "is_paused_listing",
+        "is_tradeable_buy",
+        "is_tradeable_sell",
+    ]
+    rows = []
+    for field in fields:
+        if field not in panel.columns:
+            continue
+        series = panel[field]
+        non_null = series.notna()
+        rows.append(
+            {
+                "field": field,
+                "coverage_ratio": float(non_null.mean()),
+                "true_ratio": float(series.fillna(False).astype(bool).mean()),
+                "false_ratio": float((~series.fillna(False).astype(bool)).mean()),
+                "missing_ratio": float(series.isna().mean()),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def tradeability_by_date(panel: pd.DataFrame) -> pd.DataFrame:
+    fields = [
+        "is_suspended",
+        "is_st",
+        "is_paused_listing",
+        "is_tradeable_buy",
+        "is_tradeable_sell",
+    ]
+    available = [field for field in fields if field in panel.columns]
+    if not available:
+        return pd.DataFrame()
+
+    panel = panel.copy()
+    panel["trade_date"] = normalize_trade_date(panel)
+    for field in available:
+        panel[field] = panel[field].fillna(False).astype(bool)
+
+    grouped = panel.groupby("trade_date")
+    summary = grouped["ts_code"].nunique().rename("n_codes").to_frame()
+    for field in available:
+        summary[f"{field}_count"] = grouped[field].sum()
+        summary[f"{field}_ratio"] = grouped[field].mean()
+    return summary.reset_index().sort_values("trade_date")
+
+
+def tradeability_by_code(panel: pd.DataFrame) -> pd.DataFrame:
+    fields = [
+        "is_suspended",
+        "is_st",
+        "is_paused_listing",
+        "is_tradeable_buy",
+        "is_tradeable_sell",
+    ]
+    available = [field for field in fields if field in panel.columns]
+    if not available:
+        return pd.DataFrame()
+
+    panel = panel.copy()
+    for field in available:
+        panel[field] = panel[field].fillna(False).astype(bool)
+
+    grouped = panel.groupby("ts_code")
+    summary = grouped.size().rename("rows").to_frame()
+    for field in available:
+        summary[f"{field}_count"] = grouped[field].sum()
+        summary[f"{field}_ratio"] = grouped[field].mean()
+    return summary.reset_index().sort_values(["rows", "ts_code"])
+
+
 def save_csv(df: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False, encoding="utf-8-sig")
@@ -159,6 +234,9 @@ def main() -> None:
     missing_summary = per_code_missing(panel)
     coverage = coverage_by_date(panel)
     history = history_by_code(panel)
+    bool_coverage = bool_coverage_summary(panel)
+    tradeability_date = tradeability_by_date(panel)
+    tradeability_code = tradeability_by_code(panel)
 
     print("\n=== Latest Universe Gap ===")
     if latest_gap.empty:
@@ -195,11 +273,50 @@ def main() -> None:
         print("\n=== Derived Field Missing Ratios ===")
         print(panel[available].isna().mean().sort_values(ascending=False).to_string())
 
+    if not bool_coverage.empty:
+        print("\n=== Tradeability Field Coverage ===")
+        print(bool_coverage.to_string(index=False))
+
+    if not tradeability_date.empty:
+        focus_cols = [
+            "trade_date",
+            "n_codes",
+            "is_suspended_count",
+            "is_st_count",
+            "is_paused_listing_count",
+            "is_tradeable_buy_count",
+            "is_tradeable_sell_count",
+        ]
+        focus_cols = [col for col in focus_cols if col in tradeability_date.columns]
+        print("\n=== Tradeability By Date (Head) ===")
+        print(tradeability_date[focus_cols].head(10).to_string(index=False))
+
+    if not tradeability_code.empty:
+        focus_cols = [
+            "ts_code",
+            "rows",
+            "is_suspended_ratio",
+            "is_st_ratio",
+            "is_paused_listing_ratio",
+            "is_tradeable_buy_ratio",
+            "is_tradeable_sell_ratio",
+        ]
+        focus_cols = [col for col in focus_cols if col in tradeability_code.columns]
+        print("\n=== Tradeability By Code (Worst Buy Availability) ===")
+        sort_col = "is_tradeable_buy_ratio" if "is_tradeable_buy_ratio" in tradeability_code.columns else "rows"
+        print(tradeability_code.sort_values(sort_col, ascending=True).head(10)[focus_cols].to_string(index=False))
+
     if args.save_csv:
         save_csv(latest_gap, args.output_dir / "latest_universe_gap.csv")
         save_csv(coverage, args.output_dir / "coverage_by_date.csv")
         save_csv(history, args.output_dir / "history_by_code.csv")
         save_csv(missing_summary, args.output_dir / "missing_by_code.csv")
+        if not bool_coverage.empty:
+            save_csv(bool_coverage, args.output_dir / "tradeability_field_coverage.csv")
+        if not tradeability_date.empty:
+            save_csv(tradeability_date, args.output_dir / "tradeability_by_date.csv")
+        if not tradeability_code.empty:
+            save_csv(tradeability_code, args.output_dir / "tradeability_by_code.csv")
         print(f"\nCSV 已写出到: {args.output_dir}")
 
 
