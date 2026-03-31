@@ -16,8 +16,9 @@ RESULTS_DIR = ROOT / "results" / "a_stock" / "data_quality"
 
 DEFAULT_DAILY = RAW_DIR / "daily_20150101_20241231.parquet"
 DEFAULT_BASIC = RAW_DIR / "daily_basic_20150101_20241231.parquet"
-DEFAULT_UNIVERSE = RAW_DIR / "hs300_constituents_latest.parquet"
-DEFAULT_PANEL = PROCESSED_DIR / "hs300_panel_20150101_20241231.parquet"
+DEFAULT_UNIVERSE = RAW_DIR / "000300_sh_index_weight_20150101_20241231.parquet"
+FALLBACK_UNIVERSE = RAW_DIR / "hs300_constituents_latest.parquet"
+DEFAULT_PANEL = PROCESSED_DIR / "hs300_panel_20150101_20241231_full.parquet"
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,6 +36,14 @@ def load_parquet(path: Path, name: str) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(f"{name} 文件不存在: {path}")
     return pd.read_parquet(path)
+
+
+def resolve_universe_path(path: Path) -> Path:
+    if path.exists():
+        return path
+    if path == DEFAULT_UNIVERSE and FALLBACK_UNIVERSE.exists():
+        return FALLBACK_UNIVERSE
+    return path
 
 
 def normalize_trade_date(df: pd.DataFrame) -> pd.Series:
@@ -68,7 +77,17 @@ def latest_universe_gap(panel: pd.DataFrame, universe: pd.DataFrame, daily: pd.D
 
     latest_date = panel["trade_date"].max()
     latest_codes = set(panel.loc[panel["trade_date"] == latest_date, "ts_code"])
-    universe_codes = set(universe["con_code"])
+
+    if "trade_date" in universe.columns:
+        universe = universe.copy()
+        universe["trade_date"] = normalize_trade_date(universe)
+        if universe["trade_date"].nunique() > 1:
+            universe_codes = set(universe.loc[universe["trade_date"] == latest_date, "con_code"])
+        else:
+            universe_codes = set(universe["con_code"])
+    else:
+        universe_codes = set(universe["con_code"])
+
     missing_codes = sorted(universe_codes - latest_codes)
 
     rows = []
@@ -88,6 +107,7 @@ def per_code_missing(panel: pd.DataFrame) -> pd.DataFrame:
     fields = [
         "close", "turnover_rate", "turnover_rate_f", "pe", "pe_ttm",
         "pb", "ps", "ps_ttm", "total_mv", "circ_mv", "free_share",
+        "adj_factor", "qfq_close", "limit_up", "limit_down",
     ]
     rows = []
     for code, group in panel.groupby("ts_code"):
@@ -124,9 +144,10 @@ def save_csv(df: pd.DataFrame, path: Path) -> None:
 
 def main() -> None:
     args = parse_args()
+    universe_path = resolve_universe_path(args.universe_path)
     daily = load_parquet(args.daily_path, "daily")
     basic = load_parquet(args.basic_path, "daily_basic")
-    universe = load_parquet(args.universe_path, "universe")
+    universe = load_parquet(universe_path, "universe")
     panel = load_parquet(args.panel_path, "panel")
 
     print_dataset_summary("daily", daily, ["ts_code", "trade_date"])
@@ -161,6 +182,18 @@ def main() -> None:
     print("\n=== Worst Missing Total_MV ===")
     cols = ["ts_code", "rows", "miss_total_mv", "miss_turnover_rate"]
     print(missing_summary.sort_values("miss_total_mv", ascending=False).head(10)[cols].to_string(index=False))
+
+    derived_fields = [
+        "adj_factor", "qfq_close", "qfq_open", "qfq_high", "qfq_low",
+        "limit_up", "limit_down", "is_limit_up", "is_limit_down",
+        "listed_days", "is_new_listing_60d", "is_tradeable_buy", "is_tradeable_sell",
+        "ret_1d", "ret_5d", "ret_20d", "volatility_20d",
+        "amount_ma20_ratio", "turnover_rate_ma20_ratio",
+    ]
+    available = [field for field in derived_fields if field in panel.columns]
+    if available:
+        print("\n=== Derived Field Missing Ratios ===")
+        print(panel[available].isna().mean().sort_values(ascending=False).to_string())
 
     if args.save_csv:
         save_csv(latest_gap, args.output_dir / "latest_universe_gap.csv")

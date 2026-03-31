@@ -1,3 +1,4 @@
+import os
 import sys
 from pathlib import Path
 
@@ -28,11 +29,16 @@ def init_dirs():
 
 
 def init_tushare():
-    try:
-        from config.config_tushare import TUSHARE_TOKEN
-    except ImportError as exc:
-        raise RuntimeError("请先在项目根目录下创建 config_tushare.py，并定义 TUSHARE_TOKEN") from exc
-    ts.set_token(TUSHARE_TOKEN)
+    token = os.getenv("TUSHARE_TOKEN", "")
+    if not token:
+        try:
+            from config.config_tushare import TUSHARE_TOKEN
+        except ImportError as exc:
+            raise RuntimeError("缺少 TUSHARE_TOKEN，请在 .env 环境变量或 config/config_tushare.py 中提供") from exc
+        token = TUSHARE_TOKEN
+    if not token:
+        raise RuntimeError("缺少 TUSHARE_TOKEN，请在 .env 环境变量或 config/config_tushare.py 中提供")
+    ts.set_token(token)
     pro = ts.pro_api()
     return pro
 
@@ -53,6 +59,8 @@ def parse_args():
         action="store_true",
         help="忽略已有缓存，重新拉取",
     )
+    parser.add_argument("--with-adj-factor", action="store_true", default=True)
+    parser.add_argument("--with-stk-limit", action="store_true", default=True)
     return parser.parse_args()
 
 
@@ -153,6 +161,63 @@ def fetch_by_trade_dates(
     return merged
 
 
+def fetch_by_codes(
+    api_func,
+    codes: list[str],
+    output_path: Path,
+    key_cols: list[str],
+    start_date: str,
+    end_date: str,
+    fields=None,
+    sleep_seconds: float = 0.12,
+    force_refresh: bool = False,
+    save_every: int = 50,
+    api_name: str = "dataset",
+) -> pd.DataFrame:
+    existing = load_existing(output_path, force_refresh=force_refresh)
+    existing_codes = set()
+    if not existing.empty and "ts_code" in existing.columns:
+        existing_codes = set(existing["ts_code"].astype(str).unique().tolist())
+
+    missing_codes = [code for code in codes if code not in existing_codes]
+    print(f"{api_name}: 已有 {len(existing_codes)} 只股票，待拉取 {len(missing_codes)} 只股票")
+
+    frames = [existing] if not existing.empty else []
+    fetched = 0
+    for idx, code in enumerate(missing_codes, start=1):
+        kwargs = {"ts_code": code, "start_date": start_date, "end_date": end_date}
+        if fields is not None:
+            kwargs["fields"] = fields
+        df = api_func(**kwargs)
+        if df is None or df.empty:
+            time.sleep(sleep_seconds)
+            continue
+
+        frames.append(df)
+        fetched += 1
+        if idx % 20 == 0 or idx == len(missing_codes):
+            print(f"{api_name}: {idx}/{len(missing_codes)} 股票已处理")
+
+        if fetched % save_every == 0:
+            merged = pd.concat(frames, ignore_index=True)
+            merged = save_incremental(merged, output_path, key_cols)
+            frames = [merged]
+
+        time.sleep(sleep_seconds)
+
+    if frames:
+        merged = pd.concat(frames, ignore_index=True)
+        merged = save_incremental(merged, output_path, key_cols)
+    else:
+        merged = existing
+
+    if merged.empty:
+        raise RuntimeError(f"{api_name} 拉取结果为空")
+
+    print(f"{api_name}: 最终行数 {len(merged)}")
+    return merged
+
+
 def get_daily_all(
     pro,
     trade_dates: list[str],
@@ -202,10 +267,58 @@ def get_daily_basic_all(
     )
 
 
+def get_adj_factor_all(
+    pro,
+    codes: list[str],
+    start_date: str,
+    end_date: str,
+    sleep_seconds: float,
+    force_refresh: bool,
+) -> pd.DataFrame:
+    adj_path = RAW_DIR / f"adj_factor_hs300_{start_date}_{end_date}.parquet"
+    print("按股票拉取复权因子 adj_factor...")
+    return fetch_by_codes(
+        api_func=pro.adj_factor,
+        codes=codes,
+        output_path=adj_path,
+        key_cols=["ts_code", "trade_date"],
+        start_date=start_date,
+        end_date=end_date,
+        sleep_seconds=sleep_seconds,
+        force_refresh=force_refresh,
+        api_name="adj_factor",
+    )
+
+
+def get_stk_limit_all(
+    pro,
+    codes: list[str],
+    start_date: str,
+    end_date: str,
+    sleep_seconds: float,
+    force_refresh: bool,
+) -> pd.DataFrame:
+    limit_path = RAW_DIR / f"stk_limit_hs300_{start_date}_{end_date}.parquet"
+    print("按股票拉取涨跌停价格 stk_limit...")
+    return fetch_by_codes(
+        api_func=pro.stk_limit,
+        codes=codes,
+        output_path=limit_path,
+        key_cols=["ts_code", "trade_date"],
+        start_date=start_date,
+        end_date=end_date,
+        sleep_seconds=sleep_seconds,
+        force_refresh=force_refresh,
+        api_name="stk_limit",
+    )
+
+
 def build_hs300_panel(
     daily: pd.DataFrame,
     basic: pd.DataFrame,
     uni: pd.DataFrame,
+    adj_factor: pd.DataFrame | None,
+    stk_limit: pd.DataFrame | None,
     start_date: str,
     end_date: str,
 ) -> pd.DataFrame:
@@ -231,6 +344,43 @@ def build_hs300_panel(
         suffixes=("", "_basic")
     )
 
+    if adj_factor is not None and not adj_factor.empty:
+        adj_factor = adj_factor.copy()
+        adj_factor["trade_date"] = pd.to_datetime(adj_factor["trade_date"], format="%Y%m%d")
+        panel = pd.merge(
+            panel,
+            adj_factor[["ts_code", "trade_date", "adj_factor"]],
+            on=["ts_code", "trade_date"],
+            how="left",
+        )
+        latest_adj = panel.groupby("ts_code")["adj_factor"].transform("last")
+        for col in ["open", "high", "low", "close", "pre_close"]:
+            panel[f"qfq_{col}"] = panel[col] * panel["adj_factor"] / latest_adj
+
+    if stk_limit is not None and not stk_limit.empty:
+        stk_limit = stk_limit.copy().rename(columns={"up_limit": "limit_up", "down_limit": "limit_down"})
+        stk_limit["trade_date"] = pd.to_datetime(stk_limit["trade_date"], format="%Y%m%d")
+        panel = pd.merge(
+            panel,
+            stk_limit[["ts_code", "trade_date", "limit_up", "limit_down"]],
+            on=["ts_code", "trade_date"],
+            how="left",
+        )
+        panel["is_limit_up"] = (panel["close"] >= panel["limit_up"] - 1e-6).fillna(False)
+        panel["is_limit_down"] = (panel["close"] <= panel["limit_down"] + 1e-6).fillna(False)
+
+    panel["listed_days"] = panel.groupby("ts_code").cumcount() + 1
+    panel["is_new_listing_60d"] = panel["listed_days"] < 60
+    panel["is_tradeable_buy"] = True
+    panel["is_tradeable_sell"] = True
+    if "vol" in panel.columns:
+        panel["is_tradeable_buy"] &= panel["vol"].fillna(0) > 0
+        panel["is_tradeable_sell"] &= panel["vol"].fillna(0) > 0
+    if "is_limit_up" in panel.columns:
+        panel["is_tradeable_buy"] &= ~panel["is_limit_up"]
+    if "is_limit_down" in panel.columns:
+        panel["is_tradeable_sell"] &= ~panel["is_limit_down"]
+
     panel.sort_values(["ts_code", "trade_date"], inplace=True)
     panel.to_parquet(PROCESSED_DIR / f"hs300_panel_{start_date}_{end_date}.parquet", index=False)
     print(f"最终面板条数: {len(panel)}")
@@ -250,6 +400,7 @@ def main():
 
     # 1) 股票池
     uni = get_hs300_universe(pro, end_date=args.end_date)
+    hs300_codes = sorted(uni["con_code"].dropna().unique().tolist())
 
     # 2) 行情 & basic
     daily = get_daily_all(
@@ -269,11 +420,34 @@ def main():
         force_refresh=args.force_refresh,
     )
 
+    adj_factor = pd.DataFrame()
+    stk_limit = pd.DataFrame()
+    if args.with_adj_factor:
+        adj_factor = get_adj_factor_all(
+            pro,
+            codes=hs300_codes,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            sleep_seconds=args.sleep_seconds,
+            force_refresh=args.force_refresh,
+        )
+    if args.with_stk_limit:
+        stk_limit = get_stk_limit_all(
+            pro,
+            codes=hs300_codes,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            sleep_seconds=args.sleep_seconds,
+            force_refresh=args.force_refresh,
+        )
+
     # 3) 合并为研究面板
     panel = build_hs300_panel(
         daily,
         basic,
         uni,
+        adj_factor=adj_factor,
+        stk_limit=stk_limit,
         start_date=args.start_date,
         end_date=args.end_date,
     )

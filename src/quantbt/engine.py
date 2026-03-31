@@ -88,16 +88,7 @@ class PositionBuilder:
         """
         signals = signals.copy()
         
-        if self.rebalance_freq == 'weekly':
-            signals['rebalance'] = signals['trade_date'].dt.isocalendar().week.ne(
-                signals['trade_date'].dt.isocalendar().week.shift(1)
-            )
-        elif self.rebalance_freq == 'monthly':
-            signals['rebalance'] = signals['trade_date'].dt.month.ne(
-                signals['trade_date'].dt.month.shift(1)
-            )
-        else:
-            signals['rebalance'] = True
+        signals['rebalance'] = self._get_rebalance_mask(signals['trade_date']).values
         
         pivot_signals = signals.pivot(index='trade_date', columns='ts_code', values='signal')
         pivot_signals = pivot_signals.fillna(0)
@@ -118,9 +109,84 @@ class PositionBuilder:
         row_sums = row_sums.replace(0, 1)
         positions = positions.div(row_sums, axis=0)
         
-        positions = positions.shift(1)
+        rebalance_dates = pd.Index(signals.loc[signals['rebalance'], 'trade_date'].drop_duplicates())
+        if self.rebalance_freq != 'daily':
+            positions.loc[~positions.index.isin(rebalance_dates), :] = np.nan
+            positions = positions.ffill()
+
+        positions = positions.shift(1).fillna(0.0)
+        positions = self._apply_tradeability_constraints(positions, data)
         
         return positions
+
+    def _get_rebalance_mask(self, trade_dates: pd.Series) -> pd.Series:
+        dates = pd.to_datetime(trade_dates)
+        if self.rebalance_freq == 'weekly':
+            keys = dates.dt.strftime('%Y-%W')
+            return keys.ne(keys.shift(1)).fillna(True)
+        if self.rebalance_freq == 'monthly':
+            keys = dates.dt.to_period('M').astype(str)
+            return keys.ne(keys.shift(1)).fillna(True)
+        return pd.Series(True, index=trade_dates.index)
+
+    def _apply_tradeability_constraints(
+        self,
+        target_positions: pd.DataFrame,
+        data: pd.DataFrame
+    ) -> pd.DataFrame:
+        buyable = self._build_boolean_panel(data, 'is_tradeable_buy', target_positions.index, target_positions.columns)
+        sellable = self._build_boolean_panel(data, 'is_tradeable_sell', target_positions.index, target_positions.columns)
+
+        constrained_rows = []
+        prev = pd.Series(0.0, index=target_positions.columns)
+
+        for trade_date, target in target_positions.iterrows():
+            target = target.fillna(0.0)
+            if self.long_only:
+                target = target.clip(lower=0.0)
+
+            can_buy = buyable.loc[trade_date]
+            can_sell = sellable.loc[trade_date]
+
+            reduced = prev.where((target >= prev) | (~can_sell), target)
+            desired_add = (target - reduced).clip(lower=0.0)
+            desired_add = desired_add.where(can_buy, 0.0)
+
+            available_cash = max(0.0, 1.0 - float(reduced.sum()))
+            total_add = float(desired_add.sum())
+            if total_add > 0 and available_cash > 0:
+                scale = min(1.0, available_cash / total_add)
+                current = reduced + desired_add * scale
+            else:
+                current = reduced
+
+            current = current.fillna(0.0)
+            constrained_rows.append(current)
+            prev = current
+
+        constrained = pd.DataFrame(constrained_rows, index=target_positions.index)
+        constrained.columns = target_positions.columns
+        return constrained
+
+    @staticmethod
+    def _build_boolean_panel(
+        data: pd.DataFrame,
+        column: str,
+        index: pd.Index,
+        columns: pd.Index
+    ) -> pd.DataFrame:
+        if column not in data.columns:
+            return pd.DataFrame(True, index=index, columns=columns)
+
+        values = (
+            data[['trade_date', 'ts_code', column]]
+            .drop_duplicates(subset=['trade_date', 'ts_code'], keep='last')
+            .pivot(index='trade_date', columns='ts_code', values=column)
+            .reindex(index=index, columns=columns)
+            .fillna(False)
+            .astype(bool)
+        )
+        return values
     
     def _equal_weight(self, signals: pd.DataFrame) -> pd.DataFrame:
         """等权重持仓"""

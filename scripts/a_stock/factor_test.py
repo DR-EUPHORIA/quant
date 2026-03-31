@@ -20,8 +20,8 @@ from quantbt.metrics import calculate_all_metrics
 DATA_ROOT = ROOT / "data" / "tushare"
 PROCESSED_DIR = DATA_ROOT / "processed"
 RESULTS_DIR = ROOT / "results" / "a_stock"
-DEFAULT_PANEL = PROCESSED_DIR / "hs300_panel_20150101_20241231.parquet"
-FALLBACK_PANEL = RESULTS_DIR / "panels" / "hs300_panel_20150101_20241231.parquet"
+DEFAULT_PANEL = PROCESSED_DIR / "hs300_panel_20150101_20241231_full.parquet"
+FALLBACK_PANEL = RESULTS_DIR / "panels" / "hs300_panel_20150101_20241231_full.parquet"
 
 
 def parse_args() -> argparse.Namespace:
@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--factor", type=str, default="pe_ttm")
     parser.add_argument("--groups", type=int, default=5)
     parser.add_argument("--rebalance", choices=["daily", "weekly", "monthly"], default="monthly")
+    parser.add_argument("--price-col", type=str, default="qfq_close")
     parser.add_argument("--start-date", type=str, default=None)
     parser.add_argument("--end-date", type=str, default=None)
     parser.add_argument("--higher-is-better", action="store_true")
@@ -37,13 +38,29 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_panel(panel_path: Path, factor_col: str, start_date: str | None, end_date: str | None) -> pd.DataFrame:
-    if not panel_path.exists() and panel_path == DEFAULT_PANEL and FALLBACK_PANEL.exists():
-        panel_path = FALLBACK_PANEL
+def resolve_panel_path(panel_path: Path) -> Path:
+    if panel_path == DEFAULT_PANEL and FALLBACK_PANEL.exists():
+        if not panel_path.exists():
+            return FALLBACK_PANEL
+        if FALLBACK_PANEL.stat().st_mtime >= panel_path.stat().st_mtime:
+            return FALLBACK_PANEL
+    return panel_path
+
+
+def load_panel(
+    panel_path: Path,
+    factor_col: str,
+    price_col: str,
+    start_date: str | None,
+    end_date: str | None,
+) -> pd.DataFrame:
+    panel_path = resolve_panel_path(panel_path)
     if not panel_path.exists():
         raise FileNotFoundError(f"面板文件不存在: {panel_path}")
 
-    cols = ["ts_code", "trade_date", "close", factor_col]
+    cols = ["ts_code", "trade_date", "close", factor_col, "is_tradeable_buy", "is_tradeable_sell"]
+    if price_col not in cols:
+        cols.append(price_col)
     panel = pd.read_parquet(panel_path, columns=cols)
     panel["trade_date"] = pd.to_datetime(panel["trade_date"])
 
@@ -52,7 +69,14 @@ def load_panel(panel_path: Path, factor_col: str, start_date: str | None, end_da
     if end_date:
         panel = panel[panel["trade_date"] <= pd.to_datetime(end_date)]
 
-    panel = panel.dropna(subset=["ts_code", "trade_date", "close", factor_col])
+    if price_col not in panel.columns:
+        if price_col == "qfq_close" and "close" in panel.columns:
+            print("警告: 面板缺少 qfq_close，已回退到 close")
+            price_col = "close"
+        else:
+            raise ValueError(f"面板中不存在价格列: {price_col}")
+
+    panel = panel.dropna(subset=["ts_code", "trade_date", price_col, factor_col])
     panel = panel.sort_values(["trade_date", "ts_code"]).reset_index(drop=True)
 
     if panel.empty:
@@ -172,13 +196,32 @@ def print_data_summary(panel: pd.DataFrame) -> None:
         print("警告: 交易日样本过少，分组回测与 IC 统计会退化。")
 
 
+def build_investable_mask(panel: pd.DataFrame) -> pd.DataFrame:
+    buyable = pd.Series(True, index=panel.index)
+    if "is_tradeable_buy" in panel.columns:
+        buyable &= panel["is_tradeable_buy"].fillna(False)
+    return (
+        panel.assign(is_investable=buyable)
+        .pivot(index="trade_date", columns="ts_code", values="is_investable")
+        .fillna(False)
+        .astype(bool)
+    )
+
+
 def main() -> None:
     args = parse_args()
-    panel = load_panel(args.panel_path, args.factor, args.start_date, args.end_date)
+    panel = load_panel(args.panel_path, args.factor, args.price_col, args.start_date, args.end_date)
     print_data_summary(panel)
 
+    actual_price_col = args.price_col if args.price_col in panel.columns else "close"
     factor_pivot = panel.pivot(index="trade_date", columns="ts_code", values=args.factor)
-    price_pivot = panel.pivot(index="trade_date", columns="ts_code", values="close")
+    price_pivot = panel.pivot(index="trade_date", columns="ts_code", values=actual_price_col)
+    investable_mask = (
+        build_investable_mask(panel)
+        .reindex(index=factor_pivot.index, columns=factor_pivot.columns)
+        .fillna(False)
+    )
+    factor_pivot = factor_pivot.where(investable_mask)
     asset_returns = price_pivot.pct_change().fillna(0.0)
     next_day_returns = asset_returns.shift(-1)
 
@@ -226,6 +269,7 @@ def main() -> None:
     print("因子分组回测完成")
     print(f"因子: {args.factor}")
     print(f"调仓频率: {args.rebalance}")
+    print(f"价格列: {actual_price_col}")
     print(f"输出目录: {args.output_dir}")
     print(metrics_table.to_string(index=False))
     print("\nIC Summary:")
