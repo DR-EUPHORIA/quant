@@ -6,13 +6,11 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.append(str(ROOT))
+sys.path.extend([str(ROOT), str(ROOT / "src")])
 
+from quanta_stock import DATA_QUALITY_DIR, DATA_ROOT, PROCESSED_DIR, RAW_DIR
 
-DATA_ROOT = ROOT / "data" / "tushare"
-RAW_DIR = DATA_ROOT / "raw"
-PROCESSED_DIR = DATA_ROOT / "processed"
-RESULTS_DIR = ROOT / "results" / "a_stock" / "data_quality"
+RESULTS_DIR = DATA_QUALITY_DIR
 
 DEFAULT_DAILY = RAW_DIR / "daily_20150101_20241231.parquet"
 DEFAULT_BASIC = RAW_DIR / "daily_basic_20150101_20241231.parquet"

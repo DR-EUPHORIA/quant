@@ -4,18 +4,14 @@ from pathlib import Path
 
 # 将项目根目录加入 Python 路径
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.append(str(ROOT))
+sys.path.extend([str(ROOT), str(ROOT / "src")])
 
 import argparse
 import time
 
 import pandas as pd
 import tushare as ts
-
-# === 基本参数 ===
-DATA_ROOT = ROOT / "data" / "tushare"
-RAW_DIR = DATA_ROOT / "raw"
-PROCESSED_DIR = DATA_ROOT / "processed"
+from quanta_stock import DATA_ROOT, PROCESSED_DIR, RAW_DIR
 
 START_DATE = "20150101"
 END_DATE = "20241231"

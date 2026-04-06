@@ -54,11 +54,21 @@ quant/
 │   └── env_check.py
 │
 ├── src/
-│   └── quantbt/
-│       ├── engine.py
-│       ├── metrics.py
-│       ├── cost.py
-│       ├── io.py
+│   ├── quanta_stock/
+│   │   ├── panel.py
+│   │   ├── paths.py
+│   │   └── __init__.py
+│   ├── quantbt/
+│   │   ├── engine.py
+│   │   ├── metrics.py
+│   │   ├── cost.py
+│   │   ├── io.py
+│   │   └── __init__.py
+│   └── quantcrypto/
+│       ├── paths.py
+│       ├── providers/
+│       │   ├── okx.py
+│       │   └── yahoo.py
 │       └── __init__.py
 │
 ├── tests/
@@ -68,8 +78,9 @@ quant/
 │   ├── tushare/
 │   │   ├── raw/
 │   │   └── processed/
-│   ├── ifind/
-│   └── okx/
+│   ├── crypto/
+│   │   └── raw/
+│   └── ifind/
 │
 ├── results/
 ├── requirements.txt
@@ -79,10 +90,12 @@ quant/
 
 说明：
 
-* `scripts/a_stock/` 是当前主工作流
-* `src/quantbt/` 是回测核心模块
+* `scripts/a_stock/` 现在是 A 股 CLI 入口层
+* `src/quanta_stock/` 封装 A 股数据与面板构建逻辑
+* `src/quantbt/` 封装通用回测能力
 * `tests/test_a_stock_scripts.py` 已覆盖主 A 股脚本的 CLI 路径
-* `scripts/crypto/` 和 `data/okx/` 目前更像探索性样例，不是主链路
+* `scripts/crypto/` 现在作为独立的 crypto CLI 入口，底层实现位于 `src/quantcrypto/`
+* `data/crypto/` 是 crypto 研究数据目录，和 A 股 `data/tushare/` 分开
 * `data/ifind/` 是已有的人工导出 Excel 数据，不参与当前主回测流程
 
 ---
@@ -437,11 +450,70 @@ python scripts/a_stock/data_quality_check.py --save-csv
 
 ---
 
+## `quanta_stock` 模块说明
+
+`src/quanta_stock/` 是 A 股研究子模块，负责把 A 股数据链路从脚本层抽出来，形成独立封装。
+
+当前结构：
+
+* `paths.py`
+  * 定义 `data/tushare/`、`results/a_stock/` 等 A 股专属路径
+* `panel.py`
+  * 封装面板构建、动态成分过滤、复权、涨跌停、停牌 / ST / 上市状态过滤
+
+当前职责边界：
+
+* `scripts/a_stock/*`
+  * CLI 入口
+* `src/quanta_stock/*`
+  * A 股数据与研究准备逻辑
+* `src/quantbt/*`
+  * 通用回测 / 指标 / 成本模型
+
+---
+
+## `quantcrypto` 模块说明
+
+`src/quantcrypto/` 是当前仓库中的独立 crypto 数据子模块，用于把数字资产数据采集与 A 股研究链路彻底分开。
+
+当前结构：
+
+* `paths.py`
+  * 定义 `data/crypto/raw/` 目录
+* `providers/okx.py`
+  * 提供 OKX REST K 线抓取与 CSV 保存
+* `providers/yahoo.py`
+  * 提供 Yahoo Finance OHLCV 下载与字段归一
+
+对应 CLI：
+
+* `scripts/crypto/okx_kline_rest.py`
+  * 通过 OKX REST API 拉取 K 线
+* `scripts/crypto/get_data_okx.py`
+  * 通过 `ccxt` 拉取 OKX K 线
+* `scripts/crypto/get_data_yf.py`
+  * 通过 Yahoo Finance 拉取加密资产行情
+
+示例：
+
+```bash
+python scripts/crypto/okx_kline_rest.py --inst-id BTC-USDT --bar 1D --limit 200
+python scripts/crypto/get_data_okx.py --symbol BTC/USDT --timeframe 1d --limit 500
+python scripts/crypto/get_data_yf.py --ticker BTC-USD --start 2022-01-01 --interval 1d
+```
+
+默认输出目录：
+
+* `data/crypto/raw/`
+
+---
+
 ## 当前已知限制
 
-* `stock_st` 真实数据仍受 TuShare 权限约束；无权限时只会得到空占位文件
+* `stock_st`  空占位文件
 * 交易过滤已接入停牌 / 上市状态 / ST，但仍是研究级约束，不包含更细的撮合与成交量冲击
-* crypto 相关脚本没有纳入统一测试，也没有接入主 A 股工作流
+* crypto 子模块目前只覆盖数据抓取与规范化，还没有形成独立回测链路
+* A 股与 crypto 现在已经在目录、数据路径、封装层上拆开
 
 ---
 
@@ -450,7 +522,7 @@ python scripts/a_stock/data_quality_check.py --save-csv
 * 给因子测试增加行业中性化、可交易过滤和基准对比
 * 将 `data_quality_check.py` 扩展为专门输出停牌 / ST / 暂停上市覆盖率
 * 让回测引擎的 `cost_model` 真正参与扣费，而不是只保留接口层
-* 将 crypto 脚本从样例整理为独立子模块，或明确标注为实验目录
+* 为 `quantcrypto` 增加独立的回测 / 因子研究链路，而不是只停留在行情抓取
 
 ---
 

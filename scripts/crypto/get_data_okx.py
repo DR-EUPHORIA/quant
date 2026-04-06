@@ -1,48 +1,66 @@
-import ccxt
-import pandas as pd
+import argparse
+import sys
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+import pandas as pd
 
-# 1. 初始化 OKX 交易所（只用公共接口，不需要 API key）
-exchange = ccxt.okx({
-    'enableRateLimit': True,   # 防止请求过快被限流
-    'timeout': 20000,          # 20 秒超时，避免网络略慢就挂
-    'options': {
-        'defaultType': 'spot', # 使用现货市场
-    }
-})
 
-# 2. 加载市场信息（测试网络 + 确认交易对存在）
-try:
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.extend([str(ROOT), str(ROOT / "src")])
+
+from quantcrypto import CRYPTO_RAW_DIR, ensure_crypto_dirs
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Fetch crypto candles from OKX via ccxt")
+    parser.add_argument("--symbol", default="BTC/USDT")
+    parser.add_argument("--timeframe", default="1d")
+    parser.add_argument("--limit", type=int, default=500)
+    parser.add_argument("--output-path", type=Path, default=None)
+    parser.add_argument("--no-plot", action="store_true")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    import ccxt
+
+    exchange = ccxt.okx(
+        {
+            "enableRateLimit": True,
+            "timeout": 20000,
+            "options": {"defaultType": "spot"},
+        }
+    )
+
     markets = exchange.load_markets()
     print("OKX markets loaded, total symbols:", len(markets))
-except Exception as e:
-    print("加载 OKX 市场信息失败：", type(e).__name__, e)
-    exit(1)
 
-# 3. 拉取 BTC/USDT 日线 K 线
-symbol = 'BTC/USDT'   # ccxt 统一使用这种格式
-timeframe = '1d'
-limit = 500           # 最近 500 根 K 线（约 500 天）
+    bars = exchange.fetch_ohlcv(args.symbol, timeframe=args.timeframe, limit=args.limit)
+    df = pd.DataFrame(bars, columns=["timestamp", "open", "high", "low", "close", "volume"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df["source"] = "okx_ccxt"
+    df["symbol"] = args.symbol
+    df["timeframe"] = args.timeframe
+    print(df.head())
 
-try:
-    bars = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-except Exception as e:
-    print("获取 K 线失败：", type(e).__name__, e)
-    exit(1)
+    ensure_crypto_dirs()
+    output_path = args.output_path or CRYPTO_RAW_DIR / (
+        f"okx_ccxt_{args.symbol.lower().replace('/', '_')}_{args.timeframe}.csv"
+    )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(output_path, index=False, encoding="utf-8-sig")
+    print(f"数据已保存到 {output_path}")
 
-# 4. 转为 DataFrame
-df = pd.DataFrame(
-    bars,
-    columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
-)
-df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+    if not args.no_plot and not df.empty:
+        plt.plot(df["timestamp"], df["close"])
+        plt.title(f"OKX {args.symbol} Close Price ({args.timeframe})")
+        plt.xlabel("Date")
+        plt.ylabel("Close")
+        plt.tight_layout()
+        plt.show()
 
-print(df.head())
 
-# 5. 画图
-plt.plot(df['timestamp'], df['close'])
-plt.title('OKX BTC/USDT Close Price (1d)')
-plt.xlabel('Date')
-plt.ylabel('Close')
-plt.tight_layout()
-plt.show()
+if __name__ == "__main__":
+    main()

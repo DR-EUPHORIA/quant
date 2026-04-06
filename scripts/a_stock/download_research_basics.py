@@ -10,14 +10,9 @@ import tushare as ts
 
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.append(str(ROOT))
+sys.path.extend([str(ROOT), str(ROOT / "src")])
 
-from scripts.a_stock.build_panel import build_panel, resolve_output_path  # noqa: E402
-
-
-DATA_ROOT = ROOT / "data" / "tushare"
-RAW_DIR = DATA_ROOT / "raw"
-PROCESSED_DIR = DATA_ROOT / "processed"
+from quanta_stock import DATA_ROOT, PROCESSED_DIR, RAW_DIR, build_panel, resolve_output_path  # noqa: E402
 
 INDEX_CODE = "000300.SH"
 START_DATE = "20150101"

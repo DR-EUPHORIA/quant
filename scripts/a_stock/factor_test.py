@@ -13,13 +13,10 @@ matplotlib.use("Agg")
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.extend([str(ROOT), str(ROOT / "src")])
 
+from quanta_stock import DATA_ROOT, PROCESSED_DIR, RESULTS_DIR
 from quantbt import format_metrics_table
 from quantbt.metrics import calculate_all_metrics
 
-
-DATA_ROOT = ROOT / "data" / "tushare"
-PROCESSED_DIR = DATA_ROOT / "processed"
-RESULTS_DIR = ROOT / "results" / "a_stock"
 DEFAULT_PANEL = PROCESSED_DIR / "hs300_panel_20150101_20241231_full.parquet"
 FALLBACK_PANEL = RESULTS_DIR / "panels" / "hs300_panel_20150101_20241231_full.parquet"
 
