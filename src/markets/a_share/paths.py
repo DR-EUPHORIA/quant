@@ -7,6 +7,8 @@ RAW_DIR = DATA_ROOT / "raw"
 PROCESSED_DIR = DATA_ROOT / "processed"
 RESULTS_DIR = PROJECT_RESULTS_DIR / "a_stock"
 PANELS_DIR = RESULTS_DIR / "panels"
+BACKTESTS_DIR = RESULTS_DIR / "backtests"
+FACTOR_DIR = RESULTS_DIR / "factor"
 DATA_QUALITY_DIR = RESULTS_DIR / "data_quality"
 
 
@@ -15,4 +17,6 @@ def ensure_a_stock_dirs() -> None:
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     PANELS_DIR.mkdir(parents=True, exist_ok=True)
+    BACKTESTS_DIR.mkdir(parents=True, exist_ok=True)
+    FACTOR_DIR.mkdir(parents=True, exist_ok=True)
     DATA_QUALITY_DIR.mkdir(parents=True, exist_ok=True)

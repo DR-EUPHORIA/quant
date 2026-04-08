@@ -6,10 +6,52 @@
 
 - `quantcore` 已承担基础公共能力：路径、schema 校验。
 - `quantbt` 已独立为通用回测层。
-- `markets.a_share` 已基本完成实质迁移，具备可用的数据面板构建链路。
+- `markets.a_share` 已基本完成实质迁移，已具备 `data`、`cli`、`research`、`providers` 四层的最小结构。
 - `markets.crypto` 已拆出独立命名空间，但 `data`、`research` 仍偏占位。
 - `markets.futures` 当前主要还是结构骨架。
-- `quanta_stock` 与 `quantcrypto` 仍作为兼容层保留。
+- `quanta_stock` 与 `quantcrypto` 仍作为兼容层保留，但已开始收缩为薄兼容壳。
+
+## 最新进展
+
+截至当前，已完成以下模块化结果：
+
+1. 已完成 `quanta_stock` 与 `quantcrypto` 的兼容层收缩。
+   - `src/quanta_stock/` 旧实现文件已删除，只保留 `__init__.py` 作为兼容入口。
+   - `src/quantcrypto/paths.py` 已删除，`src/quantcrypto/__init__.py` 保留为兼容入口。
+2. 已完成 A 股 CLI 最小闭环迁移。
+   - 已新增：`src/markets/a_share/cli/build_panel.py`
+   - 已新增：`src/markets/a_share/cli/backtest_ma.py`
+   - 已新增：`src/markets/a_share/cli/factor_test.py`
+   - 已新增：`src/markets/a_share/cli/data_quality_check.py`
+3. 已完成 A 股 research 分层。
+   - 已新增：`src/markets/a_share/research/factor.py`
+   - 已新增：`src/markets/a_share/research/quality.py`
+   - CLI 中的因子研究和质量检查逻辑已迁移到 `research` 层。
+4. 已完成 A 股 providers 第一版边界。
+   - 已新增：`src/markets/a_share/providers/tushare.py`
+   - 当前已沉淀最小 TuShare provider 能力：client 初始化、交易日获取、HS300 最新成分获取、指数权重获取。
+5. 已补充 A 股路径与导出接口。
+   - `src/markets/a_share/paths.py` 已新增 `BACKTESTS_DIR`、`FACTOR_DIR`。
+   - `src/markets/a_share/__init__.py`、`src/markets/a_share/cli/__init__.py`、`src/markets/a_share/research/__init__.py`、`src/markets/a_share/providers/__init__.py` 已同步更新导出接口。
+6. 已补充 A 股模块测试覆盖。
+   - `tests/market_tests/a_share/test_pipeline.py` 当前已覆盖：
+     - 面板构建
+     - 回测引擎
+     - `build_panel` CLI
+     - `backtest_ma` CLI
+     - `factor_test` CLI
+     - `data_quality_check` CLI
+
+当前验证结果：
+
+- 已执行：`python -m unittest tests.market_tests.a_share.test_pipeline`
+- 当前结果：8 个测试通过
+
+阶段性判断：
+
+- 阶段 1：已完成
+- 阶段 2：已完成最小可用版本，后续还可继续补充更多 provider 与 research 细化实现
+- 阶段 3 及以后：尚未开始
 
 ## 阶段 1：收缩兼容层
 
@@ -30,6 +72,12 @@
 
 - `quanta_stock` 与 `quantcrypto` 不再包含业务演进逻辑。
 - 新增功能只允许进入 `markets/*`、`quantcore`、`quantbt`。
+
+### 当前进度
+
+- 已完成。
+- `src/quanta_stock/` 旧实现已清理，仅保留兼容入口。
+- `src/quantcrypto/` 已进一步收缩为兼容入口。
 
 ## 阶段 2：补齐 A 股模块分层
 
@@ -60,6 +108,14 @@
 
 - A 股模块形成 `providers`、`data`、`research`、`cli` 四层清晰边界。
 - 使用方默认从 `markets.a_share` 导入，不再依赖旧包名。
+
+### 当前进度
+
+- 已完成最小可用版本。
+- `data` 层已稳定承载面板构建。
+- `cli` 层四个核心入口已补齐。
+- `research` 层已承接因子研究与质量检查逻辑。
+- `providers` 层已建立 TuShare 第一版边界，但旧下载脚本中的剩余数据源逻辑还可以继续迁移进来。
 
 ## 阶段 3：补完 crypto 最小闭环
 
@@ -174,8 +230,8 @@
 
 优先推进以下事项：
 
-1. 让 `quanta_stock`、`quantcrypto` 变成纯兼容壳。
-2. 把 A 股 CLI 和研究层进一步收敛到 `markets.a_share`。
-3. 补完 crypto 的 `loader`、`panel`、`signals`。
+1. 继续把 A 股旧下载脚本中的 TuShare 拉取逻辑迁移到 `src/markets/a_share/providers/tushare.py`。
+2. 根据新的 `research/providers` 分层，同步更新 `README.md`。
+3. 开始补完 crypto 的 `loader`、`panel`、`signals`。
 4. 为 crypto 建立最小测试。
 5. 给 futures 补 `instruments` 与连续合约第一版。

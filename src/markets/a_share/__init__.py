@@ -2,8 +2,10 @@
 
 from .data import build_panel, load_optional_parquet, load_parquet, resolve_output_path
 from .paths import (
+    BACKTESTS_DIR,
     DATA_QUALITY_DIR,
     DATA_ROOT,
+    FACTOR_DIR,
     PANELS_DIR,
     PROCESSED_DIR,
     RAW_DIR,
@@ -20,6 +22,8 @@ __all__ = [
     "PROCESSED_DIR",
     "RESULTS_DIR",
     "PANELS_DIR",
+    "BACKTESTS_DIR",
+    "FACTOR_DIR",
     "DATA_QUALITY_DIR",
     "ensure_a_stock_dirs",
     "load_parquet",
