@@ -1,4 +1,4 @@
-# quant
+﻿# quant
 
 > A-share quantitative research pipeline: data ingestion -> panel construction -> backtesting
 
@@ -33,30 +33,14 @@
 ```text
 quant/
 ├── config/
-│   ├── config_tushare.py
-│   ├── paths.py
-│   └── __init__.py
-│
 ├── scripts/
-│   ├── a_stock/
-│   │   ├── download_hs300.py
-│   │   ├── download_research_basics.py
-│   │   ├── build_panel.py
-│   │   ├── data_quality_check.py
-│   │   ├── backtest_ma.py
-│   │   ├── factor_test.py
-│   │   ├── inspect_parquet.py
-│   │   └── excel_to_csv.py
-│   ├── crypto/
-│   │   ├── get_data_okx.py
-│   │   ├── okx_kline_rest.py
-│   │   └── get_data_yf.py
+│   ├── a_stock/                 # 当前兼容 CLI 入口
+│   ├── crypto/                  # 当前兼容 CLI 入口
 │   └── env_check.py
-│
 ├── src/
-│   ├── quanta_stock/
-│   │   ├── panel.py
+│   ├── quantcore/
 │   │   ├── paths.py
+│   │   ├── schema.py
 │   │   └── __init__.py
 │   ├── quantbt/
 │   │   ├── engine.py
@@ -64,24 +48,40 @@ quant/
 │   │   ├── cost.py
 │   │   ├── io.py
 │   │   └── __init__.py
-│   └── quantcrypto/
-│       ├── paths.py
-│       ├── providers/
-│       │   ├── okx.py
-│       │   └── yahoo.py
-│       └── __init__.py
-│
+│   ├── markets/
+│   │   ├── a_share/
+│   │   │   ├── data/
+│   │   │   ├── providers/
+│   │   │   ├── research/
+│   │   │   ├── cli/
+│   │   │   ├── paths.py
+│   │   │   ├── schema.py
+│   │   │   ├── universe.py
+│   │   │   └── __init__.py
+│   │   ├── crypto/
+│   │   │   ├── data/
+│   │   │   ├── providers/
+│   │   │   ├── research/
+│   │   │   ├── cli/
+│   │   │   ├── paths.py
+│   │   │   └── __init__.py
+│   │   └── futures/
+│   │       ├── data/
+│   │       ├── providers/
+│   │       ├── research/
+│   │       ├── cli/
+│   │       ├── instruments.py
+│   │       ├── paths.py
+│   │       ├── schema.py
+│   │       └── __init__.py
+│   ├── quanta_stock/            # 兼容层，后续可移除
+│   └── quantcrypto/             # 兼容层，后续可移除
 ├── tests/
 │   └── test_a_stock_scripts.py
-│
 ├── data/
 │   ├── tushare/
-│   │   ├── raw/
-│   │   └── processed/
 │   ├── crypto/
-│   │   └── raw/
 │   └── ifind/
-│
 ├── results/
 ├── requirements.txt
 ├── Dockerfile
@@ -90,11 +90,14 @@ quant/
 
 说明：
 
-* `scripts/a_stock/` 现在是 A 股 CLI 入口层
-* `src/quanta_stock/` 封装 A 股数据与面板构建逻辑
+* `src/quantcore/` 放跨市场共享的路径与 schema 工具
 * `src/quantbt/` 封装通用回测能力
-* `tests/test_a_stock_scripts.py` 已覆盖主 A 股脚本的 CLI 路径
-* `scripts/crypto/` 现在作为独立的 crypto CLI 入口，底层实现位于 `src/quantcrypto/`
+* `src/markets/a_share/` 是当前 A 股主模块
+* `src/markets/crypto/` 是当前 crypto 主模块
+* `src/markets/futures/` 目前是期货模块骨架，预留给后续接入
+* `src/quanta_stock/` 与 `src/quantcrypto/` 目前只保留兼容入口，便于平滑迁移
+* `scripts/a_stock/` 与 `scripts/crypto/` 目前仍可作为 CLI 兼容入口
+* `tests/test_a_stock_scripts.py` 当前仍覆盖旧 CLI 路径
 * `data/crypto/` 是 crypto 研究数据目录，和 A 股 `data/tushare/` 分开
 * `data/ifind/` 是已有的人工导出 Excel 数据，不参与当前主回测流程
 
@@ -450,9 +453,9 @@ python scripts/a_stock/data_quality_check.py --save-csv
 
 ---
 
-## `quanta_stock` 模块说明
+## `markets.a_share` 模块说明
 
-`src/quanta_stock/` 是 A 股研究子模块，负责把 A 股数据链路从脚本层抽出来，形成独立封装。
+`src/markets/a_share/` 是当前 A 股研究主模块，负责把 A 股数据链路从脚本层抽出来，形成独立封装。旧的 `src/quanta_stock/` 目前仅保留兼容入口。
 
 当前结构：
 
@@ -465,16 +468,16 @@ python scripts/a_stock/data_quality_check.py --save-csv
 
 * `scripts/a_stock/*`
   * CLI 入口
-* `src/quanta_stock/*`
+* `src/markets/a_share/*`
   * A 股数据与研究准备逻辑
 * `src/quantbt/*`
   * 通用回测 / 指标 / 成本模型
 
 ---
 
-## `quantcrypto` 模块说明
+## `markets.crypto` 模块说明
 
-`src/quantcrypto/` 是当前仓库中的独立 crypto 数据子模块，用于把数字资产数据采集与 A 股研究链路彻底分开。
+`src/markets/crypto/` 是当前仓库中的 crypto 主模块，用于把数字资产数据采集与 A 股研究链路彻底分开。旧的 `src/quantcrypto/` 目前仅保留兼容入口。
 
 当前结构：
 
@@ -522,7 +525,7 @@ python scripts/crypto/get_data_yf.py --ticker BTC-USD --start 2022-01-01 --inter
 * 给因子测试增加行业中性化、可交易过滤和基准对比
 * 将 `data_quality_check.py` 扩展为专门输出停牌 / ST / 暂停上市覆盖率
 * 让回测引擎的 `cost_model` 真正参与扣费，而不是只保留接口层
-* 为 `quantcrypto` 增加独立的回测 / 因子研究链路，而不是只停留在行情抓取
+* 为 `markets.crypto` 增加独立的回测 / 因子研究链路，而不是只停留在行情抓取
 
 ---
 
@@ -547,3 +550,4 @@ python -m unittest discover -s tests -v
 
 * 所有真实数据默认都在 `data/` 和 `results/` 下，本地生成，不入 Git
 * README 里的数据规模和文件名反映的是当前仓库实际状态，不是预期状态
+

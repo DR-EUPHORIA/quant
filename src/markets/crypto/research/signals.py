@@ -1,0 +1,1 @@
+"""Crypto research signal placeholder."""

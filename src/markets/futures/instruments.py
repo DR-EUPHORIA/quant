@@ -1,0 +1,1 @@
+"""Futures instrument metadata placeholder."""

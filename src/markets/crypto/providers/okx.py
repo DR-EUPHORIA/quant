@@ -67,4 +67,3 @@ def save_okx_candles_csv(
     target.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(target, index=False, encoding="utf-8-sig")
     return target
-

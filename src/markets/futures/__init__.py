@@ -1,0 +1,1 @@
+"""Futures market package scaffold."""
