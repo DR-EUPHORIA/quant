@@ -33,10 +33,6 @@
 ```text
 quant/
 ├── config/
-├── scripts/
-│   ├── a_stock/                 # 当前兼容 CLI 入口
-│   ├── crypto/                  # 当前兼容 CLI 入口
-│   └── env_check.py
 ├── src/
 │   ├── quantcore/
 │   │   ├── paths.py
@@ -77,7 +73,11 @@ quant/
 │   ├── quanta_stock/            # 兼容层，后续可移除
 │   └── quantcrypto/             # 兼容层，后续可移除
 ├── tests/
-│   └── test_a_stock_scripts.py
+│   └── market_tests/
+│       └── a_share/
+│           └── test_pipeline.py
+├── docs/
+│   └── modularization-development-plan.md
 ├── data/
 │   ├── tushare/
 │   ├── crypto/
@@ -96,8 +96,9 @@ quant/
 * `src/markets/crypto/` 是当前 crypto 主模块
 * `src/markets/futures/` 目前是期货模块骨架，预留给后续接入
 * `src/quanta_stock/` 与 `src/quantcrypto/` 目前只保留兼容入口，便于平滑迁移
-* `scripts/a_stock/` 与 `scripts/crypto/` 目前仍可作为 CLI 兼容入口
-* `tests/test_a_stock_scripts.py` 当前仍覆盖旧 CLI 路径
+* `src/markets/a_share/cli/` 提供当前 A 股模块入口
+* `src/markets/a_share/research/` 放研究逻辑，`src/markets/a_share/providers/` 放数据源逻辑
+* `tests/market_tests/a_share/test_pipeline.py` 当前覆盖新的 A 股模块主路径
 * `data/crypto/` 是 crypto 研究数据目录，和 A 股 `data/tushare/` 分开
 * `data/ifind/` 是已有的人工导出 Excel 数据，不参与当前主回测流程
 
@@ -181,7 +182,7 @@ quant/
 
 测试文件：
 
-* `tests/test_a_stock_scripts.py`
+* `tests/market_tests/a_share/test_pipeline.py`
 
 ---
 
@@ -287,17 +288,22 @@ TUSHARE_TOKEN=YOUR_TUSHARE_TOKEN
 
 或者在 `config/config_tushare.py` 中读取该环境变量。
 
-当前 `download_hs300.py` 与 `download_research_basics.py` 都支持优先读取环境变量 `TUSHARE_TOKEN`，`config/config_tushare.py` 仅作为回退。
+当前 `markets.a_share.providers.tushare` 会优先读取环境变量 `TUSHARE_TOKEN`，`config/config_tushare.py` 仅作为回退。
 
 ---
 
 ## 推荐使用顺序
 
+当前推荐通过模块入口运行。示例命令基于 PowerShell：
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path .\src)
+```
+
 ### 1. 拉取基础原始数据
 
-```bash
-python scripts/a_stock/download_hs300.py
-```
+当前推荐直接使用 `markets.a_share.providers.tushare` 中的 provider 函数组合拉取。
+这部分 provider 已迁入模块，但下载型 CLI 还在继续补齐中。
 
 输出：
 
@@ -308,9 +314,8 @@ python scripts/a_stock/download_hs300.py
 
 ### 2. 补齐研究所需基础数据
 
-```bash
-python scripts/a_stock/download_research_basics.py
-```
+当前推荐直接使用 `markets.a_share.providers.tushare` 中的 provider 函数组合拉取。
+这部分 provider 已迁入模块，但下载型 CLI 还在继续补齐中。
 
 输出：
 
@@ -328,20 +333,20 @@ python scripts/a_stock/download_research_basics.py
 
 ### 3. 构建基础研究面板
 
-```bash
-python scripts/a_stock/build_panel.py
+```powershell
+python -m markets.a_share.cli.build_panel
 ```
 
 常用参数：
 
-```bash
-python scripts/a_stock/build_panel.py \
+```powershell
+python -m markets.a_share.cli.build_panel `
   --daily-path data/tushare/raw/daily_20150101_20241231.parquet \
   --basic-path data/tushare/raw/daily_basic_20150101_20241231.parquet \
   --universe-path data/tushare/raw/hs300_constituents_latest.parquet \
   --adj-factor-path data/tushare/raw/adj_factor_hs300_20150101_20241231.parquet \
   --stk-limit-path data/tushare/raw/stk_limit_hs300_20150101_20241231.parquet \
-  --suspend-d-path data/tushare/raw/suspend_d_hs300_20150101_20241231.parquet \
+  --suspend-path data/tushare/raw/suspend_d_hs300_20150101_20241231.parquet \
   --stock-basic-path data/tushare/raw/stock_basic_all_status.parquet \
   --stock-st-path data/tushare/raw/stock_st_20160101_20241231.parquet \
   --output-path data/tushare/processed/hs300_panel_20150101_20241231.parquet
@@ -357,34 +362,34 @@ python scripts/a_stock/build_panel.py \
 
 默认使用 `full` 面板和 `qfq_close`：
 
-```bash
-python scripts/a_stock/backtest_ma.py
+```powershell
+python -m markets.a_share.cli.backtest_ma
 ```
 
 如果想显式指定：
 
-```bash
-python scripts/a_stock/backtest_ma.py --panel-path results/a_stock/panels/hs300_panel_20150101_20241231_full.parquet --price-col qfq_close
+```powershell
+python -m markets.a_share.cli.backtest_ma --panel-path results/a_stock/panels/hs300_panel_20150101_20241231_full.parquet --price-col qfq_close
 ```
 
-输出目录默认在 `results/a_stock/ma/`，包括：
+输出目录默认在 `results/a_stock/backtests/ma_strategy/`，包括：
 
-* `nav.csv`
-* `returns.csv`
-* `positions.csv`
-* `metrics.csv`
-* 图表和 Excel 汇总
+* `ma_backtest_nav.csv`
+* `ma_backtest_returns.csv`
+* `ma_backtest_positions.csv`
+* `ma_backtest_metrics.json`
+* `ma_backtest_summary.csv`
 
 ### 5. 运行因子分组回测
 
-```bash
-python scripts/a_stock/factor_test.py --factor pe_ttm
+```powershell
+python -m markets.a_share.cli.factor_test --factor pe_ttm
 ```
 
 示例：
 
-```bash
-python scripts/a_stock/factor_test.py \
+```powershell
+python -m markets.a_share.cli.factor_test `
   --panel-path results/a_stock/panels/hs300_panel_20150101_20241231_full.parquet \
   --factor pe_ttm \
   --groups 5 \
@@ -395,8 +400,8 @@ python scripts/a_stock/factor_test.py \
 
 ### 6. 运行数据质量检查
 
-```bash
-python scripts/a_stock/data_quality_check.py --save-csv
+```powershell
+python -m markets.a_share.cli.data_quality_check --save-csv
 ```
 
 输出目录默认在 `results/a_stock/data_quality/`。
@@ -461,13 +466,23 @@ python scripts/a_stock/data_quality_check.py --save-csv
 
 * `paths.py`
   * 定义 `data/tushare/`、`results/a_stock/` 等 A 股专属路径
-* `panel.py`
+* `data/`
   * 封装面板构建、动态成分过滤、复权、涨跌停、停牌 / ST / 上市状态过滤
+* `cli/`
+  * 当前 A 股模块入口，包含 `build_panel`、`backtest_ma`、`factor_test`、`data_quality_check`
+* `research/`
+  * 放研究逻辑，当前已拆出 `factor.py` 和 `quality.py`
+* `providers/`
+  * 放数据源逻辑，当前已拆出 `tushare.py`
 
 当前职责边界：
 
-* `scripts/a_stock/*`
-  * CLI 入口
+* `src/markets/a_share/cli/*`
+  * A 股 CLI 入口
+* `src/markets/a_share/research/*`
+  * A 股研究逻辑
+* `src/markets/a_share/providers/*`
+  * A 股数据源逻辑
 * `src/markets/a_share/*`
   * A 股数据与研究准备逻辑
 * `src/quantbt/*`
@@ -490,19 +505,13 @@ python scripts/a_stock/data_quality_check.py --save-csv
 
 对应 CLI：
 
-* `scripts/crypto/okx_kline_rest.py`
-  * 通过 OKX REST API 拉取 K 线
-* `scripts/crypto/get_data_okx.py`
-  * 通过 `ccxt` 拉取 OKX K 线
-* `scripts/crypto/get_data_yf.py`
-  * 通过 Yahoo Finance 拉取加密资产行情
+* 当前 crypto CLI 仍在规划中
+* 当前主要通过 provider 模块直接使用
 
 示例：
 
-```bash
-python scripts/crypto/okx_kline_rest.py --inst-id BTC-USDT --bar 1D --limit 200
-python scripts/crypto/get_data_okx.py --symbol BTC/USDT --timeframe 1d --limit 500
-python scripts/crypto/get_data_yf.py --ticker BTC-USD --start 2022-01-01 --interval 1d
+```powershell
+python -c "from markets.crypto import fetch_okx_candles; print(fetch_okx_candles(inst_id='BTC-USDT', bar='1D', limit=5).head())"
 ```
 
 默认输出目录：

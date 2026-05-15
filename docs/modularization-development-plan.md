@@ -7,7 +7,7 @@
 - `quantcore` 已承担基础公共能力：路径、schema 校验。
 - `quantbt` 已独立为通用回测层。
 - `markets.a_share` 已基本完成实质迁移，已具备 `data`、`cli`、`research`、`providers` 四层的最小结构。
-- `markets.crypto` 已拆出独立命名空间，但 `data`、`research` 仍偏占位。
+- `markets.crypto` 已拆出独立命名空间，并已完成最小可用的 `data`、`research` 第一版闭环。
 - `markets.futures` 当前主要还是结构骨架。
 - `quanta_stock` 与 `quantcrypto` 仍作为兼容层保留，但已开始收缩为薄兼容壳。
 
@@ -41,17 +41,29 @@
      - `backtest_ma` CLI
      - `factor_test` CLI
      - `data_quality_check` CLI
+7. 已完成 README 与当前模块化结构对齐。
+   - `README.md` 已更新为当前实际结构，不再以旧的 `scripts/*` 路径作为主入口说明。
+   - A 股当前推荐入口已经切换为 `markets.a_share.cli.*`。
+8. 已完成 crypto 最小闭环第一版。
+   - 已实现：`src/markets/crypto/data/loader.py`
+   - 已实现：`src/markets/crypto/data/panel.py`
+   - 已实现：`src/markets/crypto/research/signals.py`
+   - 已更新：`src/markets/crypto/__init__.py` 与相关 `__init__` 导出
+   - 已新增：`tests/market_tests/crypto/test_pipeline.py`
 
 当前验证结果：
 
 - 已执行：`python -m unittest tests.market_tests.a_share.test_pipeline`
 - 当前结果：8 个测试通过
+- 已执行：`python -m unittest tests.market_tests.crypto.test_pipeline`
+- 当前结果：4 个测试通过
 
 阶段性判断：
 
 - 阶段 1：已完成
 - 阶段 2：已完成最小可用版本，后续还可继续补充更多 provider 与 research 细化实现
-- 阶段 3 及以后：尚未开始
+- 阶段 3：已完成最小可用版本
+- 阶段 4 及以后：尚未开始
 
 ## 阶段 1：收缩兼容层
 
@@ -148,6 +160,14 @@
 
 - crypto 具备 `拉行情 -> 标准化 -> panel -> 基础策略回测` 的最小通路。
 
+### 当前进度
+
+- 已完成最小可用版本。
+- `data.loader` 已支持将 provider 输出统一为 `ts_code + trade_date + OHLCV + source + bar`。
+- `data.panel` 已支持基础 crypto panel 构建，并生成 `ret_1d`、`ret_5d`、`ret_20d`、`volatility_20d`。
+- `research.signals` 已提供可接 `quantbt` 的均线信号生成。
+- 已补充 `tests/market_tests/crypto/test_pipeline.py` 作为最小测试覆盖。
+
 ## 阶段 4：启动 futures 第一版
 
 目标：先建立期货模块的核心抽象，不追求一步到位。
@@ -230,8 +250,8 @@
 
 优先推进以下事项：
 
-1. 继续把 A 股旧下载脚本中的 TuShare 拉取逻辑迁移到 `src/markets/a_share/providers/tushare.py`。
-2. 根据新的 `research/providers` 分层，同步更新 `README.md`。
-3. 开始补完 crypto 的 `loader`、`panel`、`signals`。
-4. 为 crypto 建立最小测试。
-5. 给 futures 补 `instruments` 与连续合约第一版。
+1. 继续把 A 股旧下载脚本中的剩余 TuShare 拉取逻辑迁移到 `src/markets/a_share/providers/tushare.py`。
+2. 为 crypto 补 CLI 入口，例如 `fetch_okx.py`、`build_panel.py`、`backtest_ma.py`。
+3. 给 crypto 增加面向 `quantbt` 的最小回测闭环测试。
+4. 启动 futures 第一版，先补 `instruments.py` 与 schema。
+5. 继续压缩兼容层，确认旧包不再承载任何新实现。

@@ -102,6 +102,214 @@ def fetch_latest_hs300_universe(pro, end_date: str = END_DATE, output_path: Path
     return weights
 
 
+def fetch_codes_from_universe(universe_path: Path | None = None) -> list[str]:
+    universe_path = universe_path or (RAW_DIR / "hs300_constituents_latest.parquet")
+    if not universe_path.exists():
+        raise FileNotFoundError(f"universe file not found: {universe_path}")
+    universe = pd.read_parquet(universe_path)
+    codes = sorted(universe["con_code"].dropna().astype(str).unique().tolist())
+    if not codes:
+        raise RuntimeError(f"universe file is empty: {universe_path}")
+    return codes
+
+
+def fetch_by_trade_dates(
+    pro,
+    api_func: Callable[..., pd.DataFrame],
+    trade_dates: list[str],
+    output_path: Path,
+    key_cols: list[str],
+    fields: list[str] | None = None,
+    sleep_seconds: float = 0.12,
+    force_refresh: bool = False,
+    save_every: int = 50,
+) -> pd.DataFrame:
+    existing = load_existing(output_path, force_refresh=force_refresh)
+    existing_dates = set()
+    if not existing.empty and "trade_date" in existing.columns:
+        existing_dates = set(existing["trade_date"].astype(str).unique().tolist())
+
+    missing_dates = [trade_date for trade_date in trade_dates if trade_date not in existing_dates]
+    frames = [existing] if not existing.empty else []
+    fetched = 0
+
+    for idx, trade_date in enumerate(missing_dates, start=1):
+        kwargs: dict[str, Any] = {"trade_date": trade_date}
+        if fields is not None:
+            kwargs["fields"] = fields
+        df = call_with_retry(api_func, sleep_seconds=sleep_seconds, **kwargs)
+        if df is None or df.empty:
+            time.sleep(sleep_seconds)
+            continue
+
+        frames.append(df)
+        fetched += 1
+
+        if fetched % save_every == 0:
+            merged = pd.concat(frames, ignore_index=True)
+            merged = save_deduped(merged, output_path, key_cols)
+            frames = [merged]
+
+        time.sleep(sleep_seconds)
+
+    merged = pd.concat(frames, ignore_index=True) if frames else existing
+    merged = save_deduped(merged, output_path, key_cols)
+    if merged.empty:
+        raise RuntimeError(f"fetch result is empty: {output_path.name}")
+    return merged
+
+
+def fetch_by_codes(
+    pro,
+    api_func: Callable[..., pd.DataFrame],
+    codes: list[str],
+    output_path: Path,
+    key_cols: list[str],
+    start_date: str,
+    end_date: str,
+    fields: list[str] | None = None,
+    sleep_seconds: float = 0.12,
+    force_refresh: bool = False,
+    save_every: int = 50,
+) -> pd.DataFrame:
+    existing = load_existing(output_path, force_refresh=force_refresh)
+    existing_codes = set()
+    if not existing.empty and "ts_code" in existing.columns:
+        existing_codes = set(existing["ts_code"].astype(str).unique().tolist())
+
+    missing_codes = [code for code in codes if code not in existing_codes]
+    frames = [existing] if not existing.empty else []
+    fetched = 0
+
+    for code in missing_codes:
+        kwargs: dict[str, Any] = {"ts_code": code, "start_date": start_date, "end_date": end_date}
+        if fields is not None:
+            kwargs["fields"] = fields
+        df = call_with_retry(api_func, sleep_seconds=sleep_seconds, **kwargs)
+        if df is None or df.empty:
+            time.sleep(sleep_seconds)
+            continue
+
+        frames.append(df)
+        fetched += 1
+        if fetched % save_every == 0:
+            merged = pd.concat(frames, ignore_index=True)
+            merged = save_deduped(merged, output_path, key_cols)
+            frames = [merged]
+
+        time.sleep(sleep_seconds)
+
+    merged = pd.concat(frames, ignore_index=True) if frames else existing
+    merged = save_deduped(merged, output_path, key_cols)
+    if merged.empty:
+        raise RuntimeError(f"fetch result is empty: {output_path.name}")
+    return merged
+
+
+def fetch_daily_all(
+    pro,
+    trade_dates: list[str],
+    start_date: str = START_DATE,
+    end_date: str = END_DATE,
+    sleep_seconds: float = 0.12,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    ensure_a_stock_dirs()
+    output_path = RAW_DIR / f"daily_{start_date}_{end_date}.parquet"
+    return fetch_by_trade_dates(
+        pro=pro,
+        api_func=pro.daily,
+        trade_dates=trade_dates,
+        output_path=output_path,
+        key_cols=["ts_code", "trade_date"],
+        sleep_seconds=sleep_seconds,
+        force_refresh=force_refresh,
+    )
+
+
+def fetch_daily_basic_all(
+    pro,
+    trade_dates: list[str],
+    start_date: str = START_DATE,
+    end_date: str = END_DATE,
+    sleep_seconds: float = 0.12,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    ensure_a_stock_dirs()
+    output_path = RAW_DIR / f"daily_basic_{start_date}_{end_date}.parquet"
+    return fetch_by_trade_dates(
+        pro=pro,
+        api_func=pro.daily_basic,
+        trade_dates=trade_dates,
+        output_path=output_path,
+        key_cols=["ts_code", "trade_date"],
+        fields=[
+            "ts_code",
+            "trade_date",
+            "turnover_rate",
+            "turnover_rate_f",
+            "pe",
+            "pe_ttm",
+            "pb",
+            "ps",
+            "ps_ttm",
+            "total_share",
+            "float_share",
+            "free_share",
+            "total_mv",
+            "circ_mv",
+        ],
+        sleep_seconds=sleep_seconds,
+        force_refresh=force_refresh,
+    )
+
+
+def fetch_adj_factor_all(
+    pro,
+    codes: list[str],
+    start_date: str = START_DATE,
+    end_date: str = END_DATE,
+    sleep_seconds: float = 0.12,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    ensure_a_stock_dirs()
+    output_path = RAW_DIR / f"adj_factor_hs300_{start_date}_{end_date}.parquet"
+    return fetch_by_codes(
+        pro=pro,
+        api_func=pro.adj_factor,
+        codes=codes,
+        output_path=output_path,
+        key_cols=["ts_code", "trade_date"],
+        start_date=start_date,
+        end_date=end_date,
+        sleep_seconds=sleep_seconds,
+        force_refresh=force_refresh,
+    )
+
+
+def fetch_stk_limit(
+    pro,
+    codes: list[str],
+    start_date: str = START_DATE,
+    end_date: str = END_DATE,
+    sleep_seconds: float = 0.12,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    ensure_a_stock_dirs()
+    output_path = RAW_DIR / f"stk_limit_hs300_{start_date}_{end_date}.parquet"
+    return fetch_by_codes(
+        pro=pro,
+        api_func=pro.stk_limit,
+        codes=codes,
+        output_path=output_path,
+        key_cols=["ts_code", "trade_date"],
+        start_date=start_date,
+        end_date=end_date,
+        sleep_seconds=sleep_seconds,
+        force_refresh=force_refresh,
+    )
+
+
 def fetch_index_weight(
     pro,
     index_code: str = INDEX_CODE,
@@ -134,3 +342,137 @@ def fetch_index_weight(
         time.sleep(sleep_seconds)
     merged = pd.concat(frames, ignore_index=True) if frames else existing
     return save_deduped(merged, path, ["index_code", "con_code", "trade_date"])
+
+
+def fetch_suspend_d(
+    pro,
+    codes: list[str],
+    start_date: str = START_DATE,
+    end_date: str = END_DATE,
+    sleep_seconds: float = 0.12,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    ensure_a_stock_dirs()
+    path = RAW_DIR / f"suspend_d_hs300_{start_date}_{end_date}.parquet"
+    existing = load_existing(path, force_refresh=force_refresh)
+    existing_codes = set(existing["ts_code"].astype(str).unique().tolist()) if not existing.empty and "ts_code" in existing.columns else set()
+    missing_codes = [code for code in codes if code not in existing_codes]
+    frames = [existing] if not existing.empty else []
+
+    for idx, code in enumerate(missing_codes, start=1):
+        df = call_with_retry(
+            pro.suspend_d,
+            sleep_seconds=sleep_seconds,
+            ts_code=code,
+            start_date=start_date,
+            end_date=end_date,
+        )
+        if df is not None and not df.empty:
+            frames.append(df)
+        if idx % 50 == 0 and frames:
+            merged = pd.concat(frames, ignore_index=True)
+            merged = save_deduped(merged, path, ["ts_code", "trade_date", "suspend_type", "suspend_timing"])
+            frames = [merged]
+        time.sleep(sleep_seconds)
+
+    merged = pd.concat(frames, ignore_index=True) if frames else existing
+    if merged.empty:
+        merged = pd.DataFrame(columns=["ts_code", "trade_date", "suspend_timing", "suspend_type"])
+    return save_deduped(merged, path, ["ts_code", "trade_date", "suspend_type", "suspend_timing"])
+
+
+def fetch_stock_st(
+    pro,
+    start_date: str = START_DATE,
+    end_date: str = END_DATE,
+    sleep_seconds: float = 0.12,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    ensure_a_stock_dirs()
+    effective_start = max(start_date, "20160101")
+    path = RAW_DIR / f"stock_st_{effective_start}_{end_date}.parquet"
+    existing = load_existing(path, force_refresh=force_refresh)
+    existing_months = set()
+    if not existing.empty and "trade_date" in existing.columns:
+        existing_months = set(pd.to_datetime(existing["trade_date"].astype(str)).dt.strftime("%Y%m").unique().tolist())
+
+    frames = [existing] if not existing.empty else []
+    missing_windows = [(win_start, win_end) for win_start, win_end in month_windows(effective_start, end_date) if win_start[:6] not in existing_months]
+
+    for idx, (win_start, win_end) in enumerate(missing_windows, start=1):
+        try:
+            df = call_with_retry(
+                pro.stock_st,
+                sleep_seconds=sleep_seconds,
+                start_date=win_start,
+                end_date=win_end,
+            )
+        except Exception as exc:
+            if "没有接口访问权限" in str(exc):
+                merged = existing if not existing.empty else pd.DataFrame(
+                    columns=["ts_code", "name", "trade_date", "type", "type_name"]
+                )
+                merged.to_parquet(path, index=False)
+                return merged
+            raise
+
+        if df is not None and not df.empty:
+            frames.append(df)
+        if idx % 24 == 0 and frames:
+            merged = pd.concat(frames, ignore_index=True)
+            merged = save_deduped(merged, path, ["ts_code", "trade_date", "type"])
+            frames = [merged]
+        time.sleep(sleep_seconds)
+
+    merged = pd.concat(frames, ignore_index=True) if frames else existing
+    if merged.empty:
+        merged = pd.DataFrame(columns=["ts_code", "name", "trade_date", "type", "type_name"])
+    return save_deduped(merged, path, ["ts_code", "trade_date", "type"])
+
+
+def fetch_stock_basic(
+    pro,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    ensure_a_stock_dirs()
+    path = RAW_DIR / "stock_basic_all_status.parquet"
+    if path.exists() and not force_refresh:
+        return pd.read_parquet(path)
+
+    frames = []
+    for status in ["L", "D", "P"]:
+        df = call_with_retry(
+            pro.stock_basic,
+            sleep_seconds=0.2,
+            exchange="",
+            list_status=status,
+            fields="ts_code,symbol,name,area,industry,market,list_status,list_date,delist_date,is_hs",
+        )
+        if df is not None and not df.empty:
+            frames.append(df)
+
+    merged = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    return save_deduped(merged, path, ["ts_code", "list_status"])
+
+
+def fetch_index_daily(
+    pro,
+    index_code: str = INDEX_CODE,
+    start_date: str = START_DATE,
+    end_date: str = END_DATE,
+    force_refresh: bool = False,
+) -> pd.DataFrame:
+    ensure_a_stock_dirs()
+    path = RAW_DIR / f"index_daily_{index_code.replace('.', '_')}_{start_date}_{end_date}.parquet"
+    if path.exists() and not force_refresh:
+        return pd.read_parquet(path)
+    df = call_with_retry(
+        pro.index_daily,
+        sleep_seconds=0.2,
+        ts_code=index_code,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    if df is None or df.empty:
+        raise RuntimeError(f"index_daily result is empty: {index_code}")
+    return save_deduped(df, path, ["ts_code", "trade_date"])
