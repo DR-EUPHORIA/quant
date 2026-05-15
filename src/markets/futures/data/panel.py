@@ -1,0 +1,1 @@
+"""Futures panel construction placeholder."""

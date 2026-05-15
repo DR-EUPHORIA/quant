@@ -50,6 +50,14 @@
    - 已实现：`src/markets/crypto/research/signals.py`
    - 已更新：`src/markets/crypto/__init__.py` 与相关 `__init__` 导出
    - 已新增：`tests/market_tests/crypto/test_pipeline.py`
+9. 已启动 futures 第一版，并完成 ETF 研究内核迁移的最小闭环。
+   - 已实现：`src/markets/futures/data/io.py`
+   - 已实现：`src/markets/futures/data/continuous.py`
+   - 已实现：`src/markets/futures/research/metrics.py`
+   - 已实现：`src/markets/futures/research/portfolio.py`
+   - 已实现：`src/markets/futures/research/reporting.py`
+   - 已实现：`src/markets/futures/cli/build_continuous.py`
+   - 已新增：`tests/market_tests/futures/test_pipeline.py`
 
 当前验证结果：
 
@@ -57,13 +65,17 @@
 - 当前结果：8 个测试通过
 - 已执行：`python -m unittest tests.market_tests.crypto.test_pipeline`
 - 当前结果：4 个测试通过
+- 已执行：`python -m unittest tests.market_tests.futures.test_pipeline`
+- 当前结果：3 个测试通过
 
 阶段性判断：
 
 - 阶段 1：已完成
 - 阶段 2：已完成最小可用版本，后续还可继续补充更多 provider 与 research 细化实现
 - 阶段 3：已完成最小可用版本
-- 阶段 4 及以后：尚未开始
+- 阶段 4：已完成最小闭环第一版，后续仍需补 `schema / instruments / panel / roll`
+- 阶段 5：已部分开始
+- 阶段 6：进行中
 
 ## 阶段 1：收缩兼容层
 
@@ -194,6 +206,16 @@
 
 - futures 具备 `原始合约 -> 连续合约 -> 研究面板` 的第一版流程。
 
+### 当前进度
+
+- 已完成最小闭环第一版，但还不是完整期货研究框架。
+- 已补 `data.io`，支持读取 `hots` 表和合约 K 线。
+- 已补 `data.continuous`，支持按主力切换表构建连续合约价格序列。
+- 已补 `research.metrics / portfolio / reporting`，支持 ETF 跟踪净值构建与结果输出。
+- 已补 `cli.build_continuous`，可直接从 `hots + kline` 生成 `.csv + .jpg` 报告。
+- 已补 `tests/market_tests/futures/test_pipeline.py` 作为最小测试入口。
+- 仍未完成的部分包括：`schema.py`、`instruments.py`、`data/panel.py`、`data/roll.py` 的正式实现。
+
 ## 阶段 5：统一测试体系
 
 目标：让模块化结果可验证，而不只是目录拆分。
@@ -215,6 +237,13 @@
 ### 完成标准
 
 - A 股、crypto、futures、quantcore、quantbt 都有最小独立测试入口。
+
+### 当前进度
+
+- A 股：已具备独立测试入口。
+- crypto：已具备独立测试入口。
+- futures：已补最小独立测试入口。
+- `quantcore` 与 `quantbt` 仍缺少单独测试目录。
 
 ## 阶段 6：统一文档与导出边界
 

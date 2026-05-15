@@ -26,6 +26,8 @@ results/
 *.csv
 *.parquet
 *.xlsx
+!src/**/data/
+!src/**/data/*.py
 # ===========================
 # Jupyter Notebook checkpoints
 # ===========================
